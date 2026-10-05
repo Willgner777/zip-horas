@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Baixar PDFs - Horas Extras</title>
-<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
+<script>window.msal||document.write('<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"><\/script>')</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   body{font-family:Segoe UI,Arial,sans-serif;background:#f3f4f6;margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh}
@@ -33,6 +34,19 @@ const CONFIG = {
   maxItens: 20
 };
 /* ===================================================== */
+
+/* ===== Diagnóstico: mostra erros na tela ===== */
+function mostrarErro(msg){
+  const el = document.getElementById("status");
+  el.textContent = "Erro: " + msg;
+  el.className = "erro";
+}
+window.addEventListener("error", e => mostrarErro(e.message));
+window.addEventListener("unhandledrejection", e => mostrarErro((e.reason && e.reason.message) || String(e.reason)));
+if (typeof msal === "undefined" || typeof JSZip === "undefined"){
+  mostrarErro("as bibliotecas MSAL/JSZip não carregaram (rede ou bloqueador). Teste em janela anônima ou outra rede.");
+  throw new Error("Bibliotecas não carregaram");
+}
 
 const scopes = [CONFIG.site + "/AllSites.Read"];
 const msalApp = new msal.PublicClientApplication({
