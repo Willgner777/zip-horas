@@ -86,8 +86,13 @@ async function sp(url, token, blob){
 }
 
 async function main(){
+  /* Guarda os IDs antes do login (o redirect do Microsoft remove a query string) */
+  const qsIds = new URLSearchParams(location.search).get("ids");
+  if (qsIds) sessionStorage.setItem("idsPendentes", qsIds);
+  const rawIds = qsIds || sessionStorage.getItem("idsPendentes") || "";
+
   const ids = [...new Set(
-    (new URLSearchParams(location.search).get("ids") || "")
+    rawIds
       .split(",").map(s => s.trim()).filter(s => /^\d+$/.test(s))
   )].slice(0, CONFIG.maxItens);
 
@@ -138,6 +143,7 @@ async function main(){
   document.body.appendChild(a);
   a.click();
   a.remove();
+  sessionStorage.removeItem("idsPendentes");
   setStatus("Pronto! " + total + " PDF(s) no ZIP.\nPode fechar esta aba.");
 }
 
