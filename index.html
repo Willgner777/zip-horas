@@ -3,51 +3,222 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Baixar PDFs - Horas Extras</title>
+<title>Exportação de PDFs - Horas Extras</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
 <script>window.msal||document.write('<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"><\/script>')</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
-  body{font-family:Segoe UI,Arial,sans-serif;background:#f3f4f6;margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh}
-  .card{background:#fff;border-radius:12px;padding:28px 32px;max-width:460px;width:90%;box-shadow:0 4px 18px rgba(0,0,0,.12)}
-  h1{font-size:18px;margin:0 0 14px}
-  #status{font-size:14px;color:#374151;white-space:pre-line}
-  .bar{height:8px;background:#e5e7eb;border-radius:4px;margin-top:14px;overflow:hidden}
-  .bar>div{height:100%;width:0;background:#2563eb;transition:width .2s}
-  .erro{color:#b91c1c}
+  :root{
+    --ink:#0E1A2B; --ink-soft:#8FA2BC;
+    --bg:#E8ECF2; --surface:#FFFFFF; --text:#14202F; --muted:#5B6B80; --line:#DCE3EC;
+    --brand:#1F5EFF; --ok:#0F8A5F; --err:#C62F3E; --track:#E6EBF2;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#070D16; --surface:#101A29; --text:#E8EEF7; --muted:#93A3B8; --line:#22324A; --track:#1B2A40; --brand:#4C84FF; --ok:#2FB886; --err:#F0606E; }
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:"IBM Plex Sans","Segoe UI",Arial,sans-serif; font-size:15px; line-height:1.5;
+    display:flex; align-items:center; justify-content:center; padding:24px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .shell{
+    display:grid; grid-template-columns:300px 1fr; width:min(940px,100%); min-height:540px;
+    background:var(--surface); border:1px solid var(--line); border-radius:18px; overflow:hidden;
+    box-shadow:0 30px 70px -30px rgba(14,26,43,.45);
+  }
+
+  /* Painel lateral */
+  .side{background:var(--ink); color:#fff; padding:32px 28px; display:flex; flex-direction:column; justify-content:space-between; gap:32px}
+  .brand{display:flex; align-items:center; gap:12px}
+  .brand-mark{width:42px; height:42px; border-radius:11px; background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.14); display:grid; place-items:center; flex:none}
+  .brand-mark svg{width:22px; height:22px; stroke:#fff}
+  .brand-name{font-weight:600; font-size:15px; line-height:1.25}
+  .brand-sub{font-size:13px; color:var(--ink-soft)}
+  dl{margin:0; display:grid; gap:20px}
+  dl div{border-top:1px solid rgba(255,255,255,.12); padding-top:14px}
+  dt{font-size:13px; color:var(--ink-soft)}
+  dd{margin:2px 0 0; font-size:30px; font-weight:500; font-variant-numeric:tabular-nums; letter-spacing:-.01em}
+  .who{font-size:13px; color:var(--ink-soft); border-top:1px solid rgba(255,255,255,.12); padding-top:14px}
+  .who strong{display:block; color:#fff; font-weight:500; word-break:break-all}
+
+  /* Conteúdo */
+  .main{padding:40px 44px; display:flex; flex-direction:column; gap:28px}
+  h1{margin:0; font-size:24px; font-weight:600; letter-spacing:-.015em}
+  .lead{margin:6px 0 0; color:var(--muted); max-width:52ch}
+
+  .progress{display:flex; align-items:center; gap:28px}
+  .ring{position:relative; width:128px; height:128px; flex:none}
+  .ring svg{width:100%; height:100%; transform:rotate(-90deg)}
+  .ring .track{stroke:var(--track)}
+  .ring .bar{stroke:var(--brand); transition:stroke-dashoffset .35s ease, stroke .2s}
+  .ring .pct{position:absolute; inset:0; display:grid; place-items:center; font-size:28px; font-weight:600; font-variant-numeric:tabular-nums; letter-spacing:-.02em}
+  .ring.ok .bar{stroke:var(--ok)}
+  .ring.erro .bar{stroke:var(--err)}
+  #status{font-size:15px; font-weight:500; white-space:pre-line}
+  #status.erro{color:var(--err)}
+
+  ol{list-style:none; margin:0; padding:0}
+  ol li{position:relative; display:grid; grid-template-columns:24px 1fr; gap:14px; padding-bottom:20px}
+  ol li:last-child{padding-bottom:0}
+  ol li::before{content:""; position:absolute; left:11px; top:26px; bottom:2px; width:2px; background:var(--track)}
+  ol li:last-child::before{display:none}
+  ol li.done::before{background:var(--brand)}
+  .mk{width:24px; height:24px; border-radius:50%; border:2px solid var(--track); background:var(--surface); display:grid; place-items:center; color:#fff; position:relative; z-index:1}
+  .mk svg{width:12px; height:12px; stroke:currentColor; opacity:0}
+  li.done .mk{background:var(--brand); border-color:var(--brand)}
+  li.done .mk svg{opacity:1}
+  li.active .mk{border-color:var(--brand); border-top-color:transparent; animation:spin .8s linear infinite}
+  li.erro .mk{background:var(--err); border-color:var(--err)}
+  li.erro .mk svg{opacity:1}
+  li.erro .mk .ic-ok{display:none}
+  li:not(.erro) .mk .ic-x{display:none}
+  .tt{font-size:14px; font-weight:500}
+  li.pending .tt{color:var(--muted); font-weight:400}
+  .det{font-size:13px; color:var(--muted); min-height:19px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .actions{margin-top:auto; display:none; gap:12px}
+  .actions.show{display:flex}
+  button{
+    font:inherit; font-weight:500; border-radius:10px; padding:11px 20px; cursor:pointer;
+    background:var(--brand); color:#fff; border:1px solid var(--brand);
+  }
+  button:hover{filter:brightness(1.08)}
+  button:focus-visible{outline:3px solid color-mix(in srgb, var(--brand) 45%, transparent); outline-offset:2px}
+
+  @media (max-width:780px){
+    body{padding:12px; align-items:flex-start}
+    .shell{grid-template-columns:1fr}
+    .side{padding:24px; gap:20px}
+    dl{grid-template-columns:repeat(3,1fr); gap:12px}
+    dl div{padding-top:10px}
+    dd{font-size:24px}
+    .main{padding:28px 24px}
+    .progress{flex-direction:column; align-items:flex-start; gap:16px}
+  }
+  @media (prefers-reduced-motion: reduce){
+    li.active .mk{animation:none}
+    .ring .bar{transition:none}
+  }
 </style>
 </head>
 <body>
-<div class="card">
-  <h1>Gerando ZIP dos PDFs</h1>
-  <div id="status">Iniciando...</div>
-  <div class="bar"><div id="prog"></div></div>
+<div class="shell">
+
+  <aside class="side">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>
+          <path d="M14 3v5h5"/>
+          <path d="M10 12h2M10 15h2M10 18h2"/>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-name">Documentos de Horas Extras</div>
+        <div class="brand-sub">Exportação em lote</div>
+      </div>
+    </div>
+
+    <dl>
+      <div><dt>Itens selecionados</dt><dd id="mItens">0</dd></div>
+      <div><dt>PDFs encontrados</dt><dd id="mPdfs">0</dd></div>
+      <div><dt>Arquivos no ZIP</dt><dd id="mZip">0</dd></div>
+    </dl>
+
+    <div class="who">Sessão Microsoft 365<strong id="user">Aguardando login</strong></div>
+  </aside>
+
+  <main class="main">
+    <header>
+      <h1 id="titulo">Preparando seu arquivo ZIP</h1>
+      <p class="lead">Os PDFs anexados aos itens selecionados são reunidos em um único arquivo. O download começa automaticamente.</p>
+    </header>
+
+    <section class="progress" aria-live="polite">
+      <div class="ring" id="ring">
+        <svg viewBox="0 0 120 120" aria-hidden="true">
+          <circle class="track" cx="60" cy="60" r="52" fill="none" stroke-width="9"/>
+          <circle class="bar" id="ringBar" cx="60" cy="60" r="52" fill="none" stroke-width="9" stroke-linecap="round" stroke-dasharray="326.73" stroke-dashoffset="326.73"/>
+        </svg>
+        <div class="pct" id="pct">0%</div>
+      </div>
+      <div id="status">Iniciando...</div>
+    </section>
+
+    <ol id="steps">
+      <li class="active"><span class="mk"><svg class="ic-ok" viewBox="0 0 24 24" fill="none" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><svg class="ic-x" viewBox="0 0 24 24" fill="none" stroke-width="3.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+        <div><div class="tt">Autenticação</div><div class="det">Verificando sua sessão</div></div></li>
+      <li class="pending"><span class="mk"><svg class="ic-ok" viewBox="0 0 24 24" fill="none" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><svg class="ic-x" viewBox="0 0 24 24" fill="none" stroke-width="3.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+        <div><div class="tt">Leitura dos anexos</div><div class="det"></div></div></li>
+      <li class="pending"><span class="mk"><svg class="ic-ok" viewBox="0 0 24 24" fill="none" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><svg class="ic-x" viewBox="0 0 24 24" fill="none" stroke-width="3.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+        <div><div class="tt">Download dos PDFs</div><div class="det"></div></div></li>
+      <li class="pending"><span class="mk"><svg class="ic-ok" viewBox="0 0 24 24" fill="none" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><svg class="ic-x" viewBox="0 0 24 24" fill="none" stroke-width="3.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+        <div><div class="tt">Compactação do arquivo</div><div class="det"></div></div></li>
+    </ol>
+
+    <div class="actions" id="actions"><button id="btnAcao" type="button">Baixar novamente</button></div>
+  </main>
 </div>
 
 <script>
-/* ====== CONFIGURAÇÃO (preencha client e tenant) ====== */
+/* ====== CONFIGURAÇÃO ====== */
 const CONFIG = {
   clientId: "5af6c376-aeda-4851-abd5-aacaae260439",
   tenantId: "669ab6c9-4a10-4796-a3dc-90f5e7d6ff40",
   site: "https://willtech7.sharepoint.com",
   listId: "15362ede-c1d8-47df-8aa5-d65fbc303d5f",
-  maxItens: 20
+  maxItens: 100
 };
-/* ===================================================== */
+/* ========================== */
+
+/* ===== Interface ===== */
+const $ = id => document.getElementById(id);
+const elStatus = $("status");
+const items = [...document.querySelectorAll("#steps li")];
+const CIRC = 326.73;
+let stepAtual = 0;
+let zipUrl = null, zipNome = "";
+
+function setStatus(t, erro){ elStatus.textContent = t; elStatus.className = erro ? "erro" : ""; }
+function setRing(p){
+  p = Math.max(0, Math.min(1, p));
+  $("ringBar").style.strokeDashoffset = CIRC * (1 - p);
+  $("pct").textContent = Math.round(p * 100) + "%";
+}
+function setDetail(i, t){ items[i].querySelector(".det").textContent = t; }
+function setStep(i){
+  stepAtual = i;
+  items.forEach((li, idx) => { li.className = idx < i ? "done" : idx === i ? "active" : "pending"; });
+}
+function mostrarAcao(label, fn){
+  $("btnAcao").textContent = label;
+  $("btnAcao").onclick = fn;
+  $("actions").classList.add("show");
+}
+function falhar(msg, permitirRetry){
+  if (items[stepAtual]) items[stepAtual].className = "erro";
+  $("ring").classList.add("erro");
+  $("titulo").textContent = "Não foi possível concluir";
+  setStatus(msg, true);
+  if (permitirRetry !== false) mostrarAcao("Tentar novamente", () => location.reload());
+}
 
 /* ===== Diagnóstico: mostra erros na tela ===== */
-function mostrarErro(msg){
-  const el = document.getElementById("status");
-  el.textContent = "Erro: " + msg;
-  el.className = "erro";
-}
-window.addEventListener("error", e => mostrarErro(e.message));
-window.addEventListener("unhandledrejection", e => mostrarErro((e.reason && e.reason.message) || String(e.reason)));
+window.addEventListener("error", e => falhar(e.message));
+window.addEventListener("unhandledrejection", e => falhar((e.reason && e.reason.message) || String(e.reason)));
 if (typeof msal === "undefined" || typeof JSZip === "undefined"){
-  mostrarErro("as bibliotecas MSAL/JSZip não carregaram (rede ou bloqueador). Teste em janela anônima ou outra rede.");
+  falhar("As bibliotecas MSAL/JSZip não carregaram (rede ou bloqueador). Teste em janela anônima ou outra rede.");
   throw new Error("Bibliotecas não carregaram");
 }
 
+/* ===== Autenticação ===== */
 const scopes = [CONFIG.site + "/AllSites.Read"];
 const msalApp = new msal.PublicClientApplication({
   auth: {
@@ -57,11 +228,6 @@ const msalApp = new msal.PublicClientApplication({
   },
   cache: { cacheLocation: "localStorage" }
 });
-
-const elStatus = document.getElementById("status");
-const elProg = document.getElementById("prog");
-function setStatus(t, erro){ elStatus.textContent = t; elStatus.className = erro ? "erro" : ""; }
-function setProg(p){ elProg.style.width = Math.round(p * 100) + "%"; }
 
 async function getToken(){
   const r = await msalApp.handleRedirectPromise();
@@ -81,10 +247,20 @@ async function sp(url, token, blob){
     Authorization: "Bearer " + token,
     Accept: "application/json;odata=nometadata"
   }});
-  if (!resp.ok) throw new Error("SharePoint " + resp.status + " em " + url);
+  if (!resp.ok) throw new Error("SharePoint " + resp.status + " ao acessar " + url);
   return blob ? resp.blob() : resp.json();
 }
 
+function baixarZip(){
+  const a = document.createElement("a");
+  a.href = zipUrl;
+  a.download = zipNome;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+/* ===== Processo principal ===== */
 async function main(){
   /* Guarda os IDs antes do login (o redirect do Microsoft remove a query string) */
   const qsIds = new URLSearchParams(location.search).get("ids");
@@ -96,17 +272,30 @@ async function main(){
       .split(",").map(s => s.trim()).filter(s => /^\d+$/.test(s))
   )].slice(0, CONFIG.maxItens);
 
-  if (!ids.length){ setStatus("Nenhum ID informado na URL (?ids=1,2,3).", true); return; }
+  if (!ids.length){
+    falhar("Nenhum item foi enviado. Volte ao aplicativo, selecione os itens e gere o ZIP novamente.", false);
+    return;
+  }
+  $("mItens").textContent = ids.length;
 
+  setStatus("Verificando sua sessão...");
   const token = await getToken();
-  if (!token) return;
+  if (!token){ setStatus("Redirecionando para o login Microsoft..."); return; }
+
+  const acc = msalApp.getAllAccounts()[0];
+  if (acc) $("user").textContent = acc.username;
+  setDetail(0, "Sessão ativa");
+  setRing(0.05);
 
   const zip = new JSZip();
   let total = 0, feitos = 0;
 
   /* 1) Lista os PDFs de cada item */
-  setStatus("Buscando anexos de " + ids.length + " item(ns)...");
+  setStep(1);
+  setStatus("Lendo anexos de " + ids.length + " item(ns)...");
+  setDetail(1, "Consultando a lista no SharePoint");
   const arquivos = [];
+  let lidos = 0;
   for (const id of ids){
     const url = CONFIG.site + "/_api/web/lists(guid'" + CONFIG.listId + "')/items(" + id +
                 ")/AttachmentFiles?$select=FileName,ServerRelativeUrl";
@@ -114,11 +303,17 @@ async function main(){
     (data.value || [])
       .filter(a => a.FileName.toLowerCase().endsWith(".pdf"))
       .forEach(a => arquivos.push({ id, nome: a.FileName, caminho: a.ServerRelativeUrl }));
+    lidos++;
+    setRing(0.05 + 0.15 * (lidos / ids.length));
   }
   total = arquivos.length;
-  if (!total){ setStatus("Nenhum PDF encontrado nos itens selecionados.", true); return; }
+  $("mPdfs").textContent = total;
+  if (!total){ falhar("Nenhum PDF foi encontrado nos itens selecionados.", false); return; }
+  setDetail(1, total + " PDF(s) encontrado(s)");
 
   /* 2) Baixa cada PDF (3 por vez) e adiciona ao ZIP */
+  setStep(2);
+  setStatus("Baixando PDFs: 0 de " + total);
   const fila = [...arquivos];
   async function worker(){
     while (fila.length){
@@ -128,26 +323,35 @@ async function main(){
       const blob = await sp(url, token, true);
       zip.file(f.id + "_" + f.nome, blob);
       feitos++;
+      $("mZip").textContent = feitos;
       setStatus("Baixando PDFs: " + feitos + " de " + total);
-      setProg(feitos / total);
+      setDetail(2, feitos + " de " + total + " arquivos");
+      setRing(0.2 + 0.7 * (feitos / total));
     }
   }
   await Promise.all([worker(), worker(), worker()]);
 
   /* 3) Gera e baixa o ZIP */
-  setStatus("Compactando...");
-  const out = await zip.generateAsync({ type: "blob" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(out);
-  a.download = "HorasExtras_" + new Date().toISOString().slice(0, 10) + ".zip";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  setStep(3);
+  setStatus("Compactando arquivos...");
+  setDetail(3, "Gerando o ZIP");
+  const out = await zip.generateAsync({ type: "blob" }, meta => setRing(0.9 + 0.1 * (meta.percent / 100)));
+  zipNome = "HorasExtras_" + new Date().toISOString().slice(0, 10) + ".zip";
+  zipUrl = URL.createObjectURL(out);
+  baixarZip();
+
+  /* Conclusão */
   sessionStorage.removeItem("idsPendentes");
-  setStatus("Pronto! " + total + " PDF(s) no ZIP.\nPode fechar esta aba.");
+  items.forEach(li => li.className = "done");
+  setDetail(3, zipNome);
+  setRing(1);
+  $("ring").classList.add("ok");
+  $("titulo").textContent = "Download concluído";
+  setStatus(total + " PDF(s) reunidos em " + zipNome + ".\nVocê já pode fechar esta aba.");
+  mostrarAcao("Baixar novamente", baixarZip);
 }
 
-main().catch(e => { console.error(e); setStatus("Erro: " + e.message, true); });
+main().catch(e => { console.error(e); falhar(e.message); });
 </script>
 </body>
 </html>
