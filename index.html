@@ -161,6 +161,8 @@
         <div><div class="tt">Download dos PDFs</div><div class="det"></div></div></li>
       <li class="pending"><span class="mk"><svg class="ic-ok" viewBox="0 0 24 24" fill="none" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><svg class="ic-x" viewBox="0 0 24 24" fill="none" stroke-width="3.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
         <div><div class="tt">Compactação do arquivo</div><div class="det"></div></div></li>
+      <li class="pending"><span class="mk"><svg class="ic-ok" viewBox="0 0 24 24" fill="none" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><svg class="ic-x" viewBox="0 0 24 24" fill="none" stroke-width="3.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+        <div><div class="tt">Backup no SharePoint</div><div class="det"></div></div></li>
     </ol>
 
     <div class="actions" id="actions"><button id="btnAcao" type="button">Baixar novamente</button></div>
@@ -174,7 +176,8 @@ const CONFIG = {
   tenantId: "669ab6c9-4a10-4796-a3dc-90f5e7d6ff40",
   site: "https://willtech7.sharepoint.com",
   listId: "15362ede-c1d8-47df-8aa5-d65fbc303d5f",
-  maxItens: 100
+  maxItens: 100,
+  pastaBackup: "/Documentos Compartilhados/Hora_extra_temp"
 };
 /* ========================== */
 
@@ -219,7 +222,7 @@ if (typeof msal === "undefined" || typeof JSZip === "undefined"){
 }
 
 /* ===== Autenticação ===== */
-const scopes = [CONFIG.site + "/AllSites.Read"];
+const scopes = [CONFIG.site + "/AllSites.Write"];
 const msalApp = new msal.PublicClientApplication({
   auth: {
     clientId: CONFIG.clientId,
@@ -250,6 +253,17 @@ async function sp(url, token, blob){
   if (!resp.ok) throw new Error("SharePoint " + resp.status + " ao acessar " + url);
   return blob ? resp.blob() : resp.json();
 }
+
+async function spPost(url, token, body, contentType){
+  const resp = await fetch(url, { method: "POST", headers: {
+    Authorization: "Bearer " + token,
+    Accept: "application/json;odata=nometadata",
+    "Content-Type": contentType
+  }, body });
+  if (!resp.ok) throw new Error("SharePoint " + resp.status + " ao gravar o backup" + (resp.status === 403 ? " (sem permissão de escrita)" : ""));
+  return resp;
+}
+function nomeSeguro(n){ return n.replace(/[#%&*:<>?\/\\|{}~"]/g, "_"); }
 
 function baixarZip(){
   const a = document.createElement("a");
@@ -288,6 +302,7 @@ async function main(){
   setRing(0.05);
 
   const zip = new JSZip();
+  const backupArquivos = [];
   let total = 0, feitos = 0;
 
   /* 1) Lista os PDFs de cada item */
@@ -322,11 +337,12 @@ async function main(){
                   encodeURI(f.caminho.replace(/'/g, "''")) + "')/$value";
       const blob = await sp(url, token, true);
       zip.file(f.id + "_" + f.nome, blob);
+      backupArquivos.push({ nome: f.id + "_" + f.nome, blob });
       feitos++;
       $("mZip").textContent = feitos;
       setStatus("Baixando PDFs: " + feitos + " de " + total);
       setDetail(2, feitos + " de " + total + " arquivos");
-      setRing(0.2 + 0.7 * (feitos / total));
+      setRing(0.2 + 0.45 * (feitos / total));
     }
   }
   await Promise.all([worker(), worker(), worker()]);
@@ -335,20 +351,56 @@ async function main(){
   setStep(3);
   setStatus("Compactando arquivos...");
   setDetail(3, "Gerando o ZIP");
-  const out = await zip.generateAsync({ type: "blob" }, meta => setRing(0.9 + 0.1 * (meta.percent / 100)));
+  const out = await zip.generateAsync({ type: "blob" }, meta => setRing(0.65 + 0.1 * (meta.percent / 100)));
   zipNome = "HorasExtras_" + new Date().toISOString().slice(0, 10) + ".zip";
   zipUrl = URL.createObjectURL(out);
   baixarZip();
+  sessionStorage.removeItem("idsPendentes");
+  setDetail(3, zipNome);
+  mostrarAcao("Baixar novamente", baixarZip);
+
+  /* 4) Backup no SharePoint (não bloqueia o ZIP) */
+  setStep(4);
+  setRing(0.75);
+  setStatus("ZIP baixado. Salvando backup no SharePoint...");
+  setDetail(4, "Criando pasta");
+  let backupOk = true, backupMsg = "";
+  const idPasta = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
+  const pasta = CONFIG.pastaBackup + "/temp" + idPasta;
+  try {
+    await spPost(CONFIG.site + "/_api/web/folders", token,
+      JSON.stringify({ ServerRelativeUrl: pasta }), "application/json;odata=nometadata");
+    let enviados = 0;
+    const filaBk = [...backupArquivos];
+    async function workerBk(){
+      while (filaBk.length){
+        const f = filaBk.shift();
+        const url = CONFIG.site + "/_api/web/GetFolderByServerRelativeUrl('" + encodeURI(pasta.replace(/'/g, "''")) +
+                    "')/Files/add(url='" + encodeURIComponent(nomeSeguro(f.nome).replace(/'/g, "''")) + "',overwrite=true)";
+        await spPost(url, token, f.blob, "application/octet-stream");
+        enviados++;
+        setDetail(4, enviados + " de " + backupArquivos.length + " arquivos");
+        setStatus("Salvando backup: " + enviados + " de " + backupArquivos.length);
+        setRing(0.75 + 0.25 * (enviados / backupArquivos.length));
+      }
+    }
+    await Promise.all([workerBk(), workerBk(), workerBk()]);
+  } catch (e) {
+    backupOk = false;
+    backupMsg = e.message;
+    console.error(e);
+  }
 
   /* Conclusão */
-  sessionStorage.removeItem("idsPendentes");
-  items.forEach(li => li.className = "done");
-  setDetail(3, zipNome);
+  items.forEach((li, i) => { li.className = (i === 4 && !backupOk) ? "erro" : "done"; });
+  if (backupOk) setDetail(4, "temp" + idPasta.slice(0, 8) + "...");
+  else setDetail(4, backupMsg);
   setRing(1);
   $("ring").classList.add("ok");
   $("titulo").textContent = "Download concluído";
-  setStatus(total + " PDF(s) reunidos em " + zipNome + ".\nVocê já pode fechar esta aba.");
-  mostrarAcao("Baixar novamente", baixarZip);
+  setStatus(backupOk
+    ? total + " PDF(s) no " + zipNome + " e salvos em Hora_extra_temp.\nVocê já pode fechar esta aba."
+    : "ZIP baixado, mas o backup no SharePoint falhou: " + backupMsg);
 }
 
 main().catch(e => { console.error(e); falhar(e.message); });
