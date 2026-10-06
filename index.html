@@ -391,16 +391,43 @@ async function main(){
     console.error(e);
   }
 
+  /* 5) Exclui os itens processados (somente se o backup deu certo) */
+  let excluidos = 0;
+  const falhasExclusao = [];
+  if (backupOk){
+    setStatus("Backup concluído. Excluindo itens processados...");
+    setDetail(4, "Excluindo itens da lista");
+    const idsExcluir = [...new Set(arquivos.map(a => a.id))];
+    for (const id of idsExcluir){
+      try {
+        const r = await fetch(CONFIG.site + "/_api/web/lists(guid'" + CONFIG.listId + "')/items(" + id + ")/recycle()", {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer " + token,
+            Accept: "application/json;odata=nometadata"
+          }
+        });
+        if (!r.ok) throw new Error("status " + r.status);
+        excluidos++;
+      } catch (e) {
+        falhasExclusao.push(id);
+        console.error("Falha ao excluir item " + id, e);
+      }
+    }
+  }
+
   /* Conclusão */
   items.forEach((li, i) => { li.className = (i === 4 && !backupOk) ? "erro" : "done"; });
-  if (backupOk) setDetail(4, "temp" + idPasta.slice(0, 8) + "...");
+  if (backupOk) setDetail(4, excluidos + " item(ns) excluído(s)");
   else setDetail(4, backupMsg);
   setRing(1);
   $("ring").classList.add("ok");
   $("titulo").textContent = "Download concluído";
-  setStatus(backupOk
-    ? total + " PDF(s) no " + zipNome + " e salvos em Hora_extra_temp.\nVocê já pode fechar esta aba."
-    : "ZIP baixado, mas o backup no SharePoint falhou: " + backupMsg);
+  setStatus(!backupOk
+    ? "ZIP baixado, mas o backup no SharePoint falhou: " + backupMsg + "\nNenhum item foi excluído."
+    : falhasExclusao.length
+      ? total + " PDF(s) no " + zipNome + " e salvos em Hora_extra_temp.\nNão foi possível excluir os itens: " + falhasExclusao.join(", ")
+      : total + " PDF(s) no " + zipNome + " e salvos em Hora_extra_temp.\n" + excluidos + " item(ns) excluído(s) da lista.\nVocê já pode fechar esta aba.");
 }
 
 main().catch(e => { console.error(e); falhar(e.message); });
